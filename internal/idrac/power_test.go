@@ -7,43 +7,40 @@ import (
 	"testing"
 )
 
+func mockIDRACWithPower(t *testing.T, pwState string) *httptest.Server {
+	t.Helper()
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start.html":
+			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
+			fmt.Fprint(w, `<html></html>`)
+		case "/data/login":
+			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
+		case "/data":
+			if r.URL.Query().Get("set") != "" {
+				fmt.Fprint(w, `<root><status>ok</status></root>`)
+			} else {
+				fmt.Fprintf(w, `<root><pwState>%s</pwState></root>`, pwState)
+			}
+		}
+	}))
+}
+
 func TestGetPowerState(t *testing.T) {
 	tests := []struct {
 		name       string
-		xmlResp    string
+		pwState    string
 		wantState  PowerState
 		wantStatus string
 	}{
-		{
-			name:       "power on",
-			xmlResp:    `<root><pwState>1</pwState></root>`,
-			wantState:  PowerOn,
-			wantStatus: "on",
-		},
-		{
-			name:       "power off",
-			xmlResp:    `<root><pwState>0</pwState></root>`,
-			wantState:  PowerOff,
-			wantStatus: "off",
-		},
-		{
-			name:       "invalid state",
-			xmlResp:    `<root><pwState>2</pwState></root>`,
-			wantState:  PowerInvalid,
-			wantStatus: "unknown",
-		},
+		{"power on", "1", PowerOn, "on"},
+		{"power off", "0", PowerOff, "off"},
+		{"invalid", "2", PowerInvalid, "unknown"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/data/login" {
-					http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
-					fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-					return
-				}
-				fmt.Fprint(w, tt.xmlResp)
-			}))
+			server := mockIDRACWithPower(t, tt.pwState)
 			defer server.Close()
 
 			c := NewClient("localhost", "root", "calvin")
@@ -66,14 +63,7 @@ func TestGetPowerState(t *testing.T) {
 }
 
 func TestSetPowerByName(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
-			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
-			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
-		}
-		fmt.Fprint(w, `<root><status>ok</status></root>`)
-	}))
+	server := mockIDRACWithPower(t, "1")
 	defer server.Close()
 
 	c := NewClient("localhost", "root", "calvin")
@@ -81,14 +71,12 @@ func TestSetPowerByName(t *testing.T) {
 	c.http = server.Client()
 	_ = c.Login()
 
-	// Valid actions
 	for _, action := range []string{"on", "off", "restart", "reset", "nmi", "shutdown"} {
 		if err := c.SetPowerByName(action); err != nil {
 			t.Errorf("SetPowerByName(%q) error = %v", action, err)
 		}
 	}
 
-	// Invalid action
 	if err := c.SetPowerByName("invalid"); err == nil {
 		t.Error("SetPowerByName(invalid) should fail")
 	}

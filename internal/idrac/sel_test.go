@@ -13,26 +13,10 @@ func TestParseSEL(t *testing.T) {
 		raw       string
 		wantCount int
 	}{
-		{
-			name:      "pipe delimited entries",
-			raw:       "1|2024-01-01 12:00:00|Normal|System Boot\n2|2024-01-01 12:05:00|Warning|Temperature above threshold",
-			wantCount: 2,
-		},
-		{
-			name:      "empty",
-			raw:       "",
-			wantCount: 0,
-		},
-		{
-			name:      "semicolon delimited",
-			raw:       "1;2024-01-01;Critical;Disk failure",
-			wantCount: 1,
-		},
-		{
-			name:      "fallback single line",
-			raw:       "Unknown event data",
-			wantCount: 1,
-		},
+		{"pipe delimited", "1|2024-01-01 12:00:00|Normal|System Boot\n2|2024-01-01 12:05:00|Warning|Temperature above threshold", 2},
+		{"empty", "", 0},
+		{"semicolon delimited", "1;2024-01-01;Critical;Disk failure", 1},
+		{"fallback single line", "Unknown event data", 1},
 	}
 
 	for _, tt := range tests {
@@ -53,27 +37,9 @@ func TestParseSELLine(t *testing.T) {
 		wantSev  string
 		wantDesc string
 	}{
-		{
-			name:     "pipe format",
-			line:     "42|2024-06-15 10:30:00|Normal|System powered on",
-			wantID:   "42",
-			wantSev:  "Normal",
-			wantDesc: "System powered on",
-		},
-		{
-			name:     "semicolon format",
-			line:     "7;2024-06-15;Critical;PSU failure",
-			wantID:   "7",
-			wantSev:  "Critical",
-			wantDesc: "PSU failure",
-		},
-		{
-			name:     "fallback",
-			line:     "raw event text",
-			wantID:   "0",
-			wantSev:  "Unknown",
-			wantDesc: "raw event text",
-		},
+		{"pipe format", "42|2024-06-15 10:30:00|Normal|System powered on", "42", "Normal", "System powered on"},
+		{"semicolon format", "7;2024-06-15;Critical;PSU failure", "7", "Critical", "PSU failure"},
+		{"fallback", "raw event text", "0", "Unknown", "raw event text"},
 	}
 
 	for _, tt := range tests {
@@ -94,13 +60,16 @@ func TestParseSELLine(t *testing.T) {
 
 func TestGetSEL(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
+		switch r.URL.Path {
+		case "/start.html":
 			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
+			fmt.Fprint(w, `<html></html>`)
+		case "/data/login":
 			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
-		}
-		fmt.Fprint(w, `<root><sel>1|2024-01-01 12:00:00|Normal|Boot
+		case "/data":
+			fmt.Fprint(w, `<root><sel>1|2024-01-01 12:00:00|Normal|Boot
 2|2024-01-01 12:05:00|Warning|Temp high</sel></root>`)
+		}
 	}))
 	defer server.Close()
 

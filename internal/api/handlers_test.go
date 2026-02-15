@@ -15,10 +15,14 @@ import (
 func newTestRouter(t *testing.T) (http.Handler, *httptest.Server) {
 	t.Helper()
 
-	// Mock iDRAC server
+	// Mock iDRAC server (two-step login flow)
 	idracServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
+		switch r.URL.Path {
+		case "/start.html":
 			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "test-session"})
+			fmt.Fprint(w, `<html></html>`)
+			return
+		case "/data/login":
 			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
 			return
 		}

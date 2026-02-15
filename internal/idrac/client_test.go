@@ -8,6 +8,65 @@ import (
 	"testing"
 )
 
+// mockIDRAC creates a test server that mimics the iDRAC6 two-step login flow.
+func mockIDRAC(t *testing.T, authResult int, forwardURL string) *httptest.Server {
+	t.Helper()
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start.html":
+			http.SetCookie(w, &http.Cookie{
+				Name:  "_appwebSessionId_",
+				Value: "test-session-123",
+			})
+			fmt.Fprint(w, `<html><body>start</body></html>`)
+
+		case "/data/login":
+			if r.Method != "POST" {
+				t.Errorf("login: expected POST, got %s", r.Method)
+			}
+			fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+				<root>
+					<authResult>%d</authResult>
+					<forwardUrl>%s</forwardUrl>
+					<errorMsg></errorMsg>
+				</root>`, authResult, forwardURL)
+
+		case "/data":
+			// Verify session cookie
+			cookie, err := r.Cookie("_appwebSessionId_")
+			if err != nil || cookie.Value == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			get := r.URL.Query().Get("get")
+			set := r.URL.Query().Get("set")
+			if get != "" {
+				handleDataGet(w, get)
+			} else if set != "" {
+				fmt.Fprint(w, `<root><status>ok</status></root>`)
+			}
+
+		case "/data/logout":
+			fmt.Fprint(w, `<root><status>ok</status></root>`)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func handleDataGet(w http.ResponseWriter, keys string) {
+	if strings.Contains(keys, "pwState") {
+		fmt.Fprint(w, `<root><pwState>1</pwState></root>`)
+	} else if strings.Contains(keys, "temperatures") {
+		fmt.Fprint(w, `<root><temperatures>Inlet Temp=23;ok;42;47</temperatures><fans></fans><voltages></voltages></root>`)
+	} else if strings.Contains(keys, "hostName") {
+		fmt.Fprint(w, `<root><hostName>R710</hostName><sysDesc>PowerEdge R710</sysDesc></root>`)
+	} else {
+		fmt.Fprint(w, `<root></root>`)
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	c := NewClient("192.168.1.172", "root", "calvin")
 
@@ -23,28 +82,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestLogin_Success(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/data/login" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-			return
-		}
-		if r.Method != "POST" {
-			t.Errorf("expected POST, got %s", r.Method)
-			return
-		}
-
-		http.SetCookie(w, &http.Cookie{
-			Name:  "_appwebSessionId_",
-			Value: "test-session-123",
-		})
-
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
-			<root>
-				<authResult>0</authResult>
-				<forwardUrl>index.html</forwardUrl>
-				<errorMsg></errorMsg>
-			</root>`)
-	}))
+	server := mockIDRAC(t, 0, "index.html")
 	defer server.Close()
 
 	c := NewClient("localhost", "root", "calvin")
@@ -61,19 +99,7 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_WithNewAuth(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{
-			Name:  "_appwebSessionId_",
-			Value: "session-456",
-		})
-
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
-			<root>
-				<authResult>0</authResult>
-				<forwardUrl>index.html?ST1=token1abc,ST2=token2def</forwardUrl>
-				<errorMsg></errorMsg>
-			</root>`)
-	}))
+	server := mockIDRAC(t, 0, "index.html?ST1=token1abc,ST2=token2def")
 	defer server.Close()
 
 	c := NewClient("localhost", "root", "calvin")
@@ -96,14 +122,7 @@ func TestLogin_WithNewAuth(t *testing.T) {
 }
 
 func TestLogin_Failure(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
-			<root>
-				<authResult>1</authResult>
-				<forwardUrl></forwardUrl>
-				<errorMsg>Invalid credentials</errorMsg>
-			</root>`)
-	}))
+	server := mockIDRAC(t, 1, "")
 	defer server.Close()
 
 	c := NewClient("localhost", "root", "wrong")
@@ -120,27 +139,7 @@ func TestLogin_Failure(t *testing.T) {
 }
 
 func TestGet_WithSession(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
-			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
-			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
-		}
-
-		// Verify session cookie is sent
-		cookie, err := r.Cookie("_appwebSessionId_")
-		if err != nil || cookie.Value != "sess" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		get := r.URL.Query().Get("get")
-		if get != "pwState" {
-			t.Errorf("get param = %q, want pwState", get)
-		}
-
-		fmt.Fprint(w, `<root><pwState>1</pwState></root>`)
-	}))
+	server := mockIDRAC(t, 0, "index.html")
 	defer server.Close()
 
 	c := NewClient("localhost", "root", "calvin")
@@ -164,18 +163,23 @@ func TestGet_WithSession(t *testing.T) {
 func TestGet_RetryOn401(t *testing.T) {
 	callCount := 0
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
-			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "new-sess"})
+		switch r.URL.Path {
+		case "/start.html":
+			http.SetCookie(w, &http.Cookie{
+				Name:  "_appwebSessionId_",
+				Value: "sess",
+			})
+			fmt.Fprint(w, `<html></html>`)
+		case "/data/login":
 			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
+		case "/data":
+			callCount++
+			if callCount == 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			fmt.Fprint(w, `<root><pwState>1</pwState></root>`)
 		}
-
-		callCount++
-		if callCount == 1 {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		fmt.Fprint(w, `<root><pwState>1</pwState></root>`)
 	}))
 	defer server.Close()
 
@@ -243,6 +247,23 @@ func TestExtractTokens(t *testing.T) {
 				t.Errorf("newAuth = %v, want %v", c.newAuth, tt.wantNew)
 			}
 		})
+	}
+}
+
+func TestLogout(t *testing.T) {
+	server := mockIDRAC(t, 0, "index.html")
+	defer server.Close()
+
+	c := NewClient("localhost", "root", "calvin")
+	c.baseURL = server.URL
+	c.http = server.Client()
+
+	_ = c.Login()
+	if err := c.Logout(); err != nil {
+		t.Fatalf("Logout() error = %v", err)
+	}
+	if c.sessionID != "" {
+		t.Error("sessionID should be empty after logout")
 	}
 }
 

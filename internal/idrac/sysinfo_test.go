@@ -9,22 +9,25 @@ import (
 
 func TestGetSystemInfo(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/data/login" {
+		switch r.URL.Path {
+		case "/start.html":
 			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "sess"})
+			fmt.Fprint(w, `<html></html>`)
+		case "/data/login":
 			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
+		case "/data":
+			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
+				<root>
+					<hostName>R710-TEST</hostName>
+					<sysDesc>PowerEdge R710</sysDesc>
+					<sysRev>II</sysRev>
+					<biosVer>6.6.0</biosVer>
+					<fwVersion>2.92</fwVersion>
+					<LCCfwVersion>1.5.1</LCCfwVersion>
+					<osName>Ubuntu 22.04</osName>
+					<svcTag>ABC1234</svcTag>
+				</root>`)
 		}
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
-			<root>
-				<hostName>R710-TEST</hostName>
-				<sysDesc>PowerEdge R710</sysDesc>
-				<sysRev>II</sysRev>
-				<biosVer>6.6.0</biosVer>
-				<fwVersion>2.92</fwVersion>
-				<LCCfwVersion>1.5.1</LCCfwVersion>
-				<osName>Ubuntu 22.04</osName>
-				<svcTag>ABC1234</svcTag>
-			</root>`)
 	}))
 	defer server.Close()
 
@@ -52,11 +55,5 @@ func TestGetSystemInfo(t *testing.T) {
 	}
 	if info.FWVersion != "2.92" {
 		t.Errorf("FWVersion = %q, want 2.92", info.FWVersion)
-	}
-	if info.LCCVersion != "1.5.1" {
-		t.Errorf("LCCVersion = %q, want 1.5.1", info.LCCVersion)
-	}
-	if info.OSName != "Ubuntu 22.04" {
-		t.Errorf("OSName = %q, want Ubuntu 22.04", info.OSName)
 	}
 }

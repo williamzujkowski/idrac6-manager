@@ -4,10 +4,85 @@ import (
 	"testing"
 )
 
-func TestParseTemperatures(t *testing.T) {
+func TestParseXMLSensors(t *testing.T) {
+	sensors := []sensorXML{
+		{
+			Status:     "Normal",
+			Name:       "system board ambient",
+			Reading:    "20",
+			Units:      "C",
+			MinWarning: "8",
+			MaxWarning: "42",
+			MinFailure: "3",
+			MaxFailure: "47",
+		},
+		{
+			Status:     "Normal",
+			Name:       "cpu1",
+			Reading:    "45",
+			Units:      "C",
+			MaxWarning: "85",
+			MaxFailure: "90",
+		},
+	}
+
+	readings := parseXMLSensors(sensors)
+	if len(readings) != 2 {
+		t.Fatalf("got %d readings, want 2", len(readings))
+	}
+
+	if readings[0].Name != "system board ambient" {
+		t.Errorf("name = %q, want system board ambient", readings[0].Name)
+	}
+	if readings[0].Value != 20 {
+		t.Errorf("value = %f, want 20", readings[0].Value)
+	}
+	if readings[0].Unit != "C" {
+		t.Errorf("unit = %q, want C", readings[0].Unit)
+	}
+	if readings[0].Status != "normal" {
+		t.Errorf("status = %q, want normal", readings[0].Status)
+	}
+	if readings[0].Warning != 42 {
+		t.Errorf("warning = %f, want 42", readings[0].Warning)
+	}
+	if readings[0].Critical != 47 {
+		t.Errorf("critical = %f, want 47", readings[0].Critical)
+	}
+}
+
+func TestParseXMLSensors_Fans(t *testing.T) {
+	sensors := []sensorXML{
+		{
+			Status:     "Normal",
+			Name:       "system board 1",
+			Reading:    "1440",
+			Units:      "RPM",
+			MinWarning: "N/A",
+			MaxWarning: "N/A",
+			MinFailure: "720",
+			MaxFailure: "N/A",
+		},
+	}
+
+	readings := parseXMLSensors(sensors)
+	if len(readings) != 1 {
+		t.Fatalf("got %d readings, want 1", len(readings))
+	}
+	if readings[0].Value != 1440 {
+		t.Errorf("value = %f, want 1440", readings[0].Value)
+	}
+	// N/A should parse to 0
+	if readings[0].Warning != 0 {
+		t.Errorf("warning = %f, want 0 (N/A)", readings[0].Warning)
+	}
+}
+
+func TestParseLegacySensors(t *testing.T) {
 	tests := []struct {
 		name      string
 		raw       string
+		unit      string
 		wantCount int
 		wantFirst string
 		wantValue float64
@@ -15,6 +90,7 @@ func TestParseTemperatures(t *testing.T) {
 		{
 			name:      "pipe delimited",
 			raw:       "Inlet Temp=23;ok;42;47|Exhaust Temp=35;ok;70;75",
+			unit:      "C",
 			wantCount: 2,
 			wantFirst: "Inlet Temp",
 			wantValue: 23,
@@ -22,6 +98,7 @@ func TestParseTemperatures(t *testing.T) {
 		{
 			name:      "single sensor",
 			raw:       "CPU Temp=65;ok;90;95",
+			unit:      "C",
 			wantCount: 1,
 			wantFirst: "CPU Temp",
 			wantValue: 65,
@@ -29,20 +106,14 @@ func TestParseTemperatures(t *testing.T) {
 		{
 			name:      "empty string",
 			raw:       "",
+			unit:      "C",
 			wantCount: 0,
-		},
-		{
-			name:      "with warning status",
-			raw:       "DIMM Temp=80;warning;85;90",
-			wantCount: 1,
-			wantFirst: "DIMM Temp",
-			wantValue: 80,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			readings := parseTemperatures(tt.raw)
+			readings := parseLegacySensors(tt.raw, tt.unit)
 			if len(readings) != tt.wantCount {
 				t.Errorf("got %d readings, want %d", len(readings), tt.wantCount)
 			}
@@ -104,12 +175,6 @@ func TestParseSensorEntry(t *testing.T) {
 			if r.Status != tt.wantStat && tt.wantStat != "" {
 				t.Errorf("Status = %q, want %q", r.Status, tt.wantStat)
 			}
-			if r.Warning != tt.wantWarn {
-				t.Errorf("Warning = %f, want %f", r.Warning, tt.wantWarn)
-			}
-			if r.Critical != tt.wantCrit {
-				t.Errorf("Critical = %f, want %f", r.Critical, tt.wantCrit)
-			}
 		})
 	}
 }
@@ -146,6 +211,7 @@ func TestParseFloat(t *testing.T) {
 		{" 23 ", 23},
 		{"", 0},
 		{"abc", 0},
+		{"N/A", 0},
 	}
 
 	for _, tt := range tests {

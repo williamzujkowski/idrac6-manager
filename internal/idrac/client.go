@@ -47,11 +47,25 @@ func NewClient(host, username, password string) *Client {
 		password: password,
 		baseURL:  "https://" + host,
 		http: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 15 * time.Second,
 			Jar:     jar,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: true, //nolint:gosec // iDRAC6 uses self-signed certs
+					// iDRAC6 only supports TLS 1.0/1.1 with legacy ciphers
+					MinVersion: tls.VersionTLS10,
+					MaxVersion: tls.VersionTLS12,
+					CipherSuites: []uint16{
+						tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+						tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+						tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+						tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+						tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+						tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+						tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+						tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+						tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					},
 				},
 			},
 		},
@@ -66,50 +80,31 @@ func (c *Client) Login() error {
 }
 
 func (c *Client) login() error {
-	form := url.Values{
-		"user":     {c.username},
-		"password": {c.password},
-	}
-
-	req, err := http.NewRequest("POST", c.baseURL+"/data/login", strings.NewReader(form.Encode()))
+	// Step 1: Get session cookie from /start.html
+	// iDRAC6 sets _appwebSessionId_ on the start page, not on login POST
+	sessionReq, err := http.NewRequest("GET", c.baseURL+"/start.html", nil)
 	if err != nil {
-		return fmt.Errorf("creating login request: %w", err)
+		return fmt.Errorf("creating session request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.http.Do(req)
+	sessionResp, err := c.http.Do(sessionReq)
 	if err != nil {
-		return fmt.Errorf("login request failed: %w", err)
+		return fmt.Errorf("session request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	sessionResp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading login response: %w", err)
-	}
-
-	var result loginResponse
-	if err := xml.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("parsing login response: %w", err)
-	}
-
-	// authResult: 0=success (counterintuitive but matches iDRAC6 behavior)
-	// Some firmware versions use 1=success — we check forwardUrl presence
-	if result.ForwardURL == "" && result.AuthResult != 0 {
-		return fmt.Errorf("login failed: authResult=%d, error=%s", result.AuthResult, result.ErrorMsg)
-	}
-
-	// Extract session cookie
-	for _, cookie := range resp.Cookies() {
+	// Extract session cookie from start.html response
+	c.sessionID = ""
+	for _, cookie := range sessionResp.Cookies() {
 		if cookie.Name == "_appwebSessionId_" {
 			c.sessionID = cookie.Value
 			break
 		}
 	}
 
-	// Also check set-cookie header directly (some firmware sends it differently)
+	// Also check set-cookie header directly
 	if c.sessionID == "" {
-		setCookie := resp.Header.Get("Set-Cookie")
+		setCookie := sessionResp.Header.Get("Set-Cookie")
 		if idx := strings.Index(setCookie, "_appwebSessionId_="); idx >= 0 {
 			val := setCookie[idx+len("_appwebSessionId_="):]
 			if semi := strings.Index(val, ";"); semi >= 0 {
@@ -120,7 +115,49 @@ func (c *Client) login() error {
 	}
 
 	if c.sessionID == "" {
-		return fmt.Errorf("no session cookie in login response")
+		return fmt.Errorf("no session cookie from /start.html")
+	}
+
+	// Step 2: Login with the session cookie
+	// IMPORTANT: iDRAC6 requires "user" before "password" in the POST body.
+	// Go's url.Values.Encode() sorts alphabetically, which breaks auth.
+	formBody := "user=" + url.QueryEscape(c.username) + "&password=" + url.QueryEscape(c.password)
+
+	loginReq, err := http.NewRequest("POST", c.baseURL+"/data/login", strings.NewReader(formBody))
+	if err != nil {
+		return fmt.Errorf("creating login request: %w", err)
+	}
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginReq.AddCookie(&http.Cookie{Name: "_appwebSessionId_", Value: c.sessionID})
+
+	loginResp, err := c.http.Do(loginReq)
+	if err != nil {
+		return fmt.Errorf("login request failed: %w", err)
+	}
+	defer loginResp.Body.Close()
+
+	body, err := io.ReadAll(loginResp.Body)
+	if err != nil {
+		return fmt.Errorf("reading login response: %w", err)
+	}
+
+	var result loginResponse
+	if err := xml.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("parsing login response: %w", err)
+	}
+
+	// authResult: 0=success, non-zero=failure
+	// (1=bad credentials, 2=missing user, 3=missing password, 4=privilege, 5=session limit)
+	if result.AuthResult != 0 {
+		return fmt.Errorf("login failed: authResult=%d, error=%s", result.AuthResult, result.ErrorMsg)
+	}
+
+	// Check if login response provides a new/different session cookie
+	for _, cookie := range loginResp.Cookies() {
+		if cookie.Name == "_appwebSessionId_" {
+			c.sessionID = cookie.Value
+			break
+		}
 	}
 
 	// Extract ST1/ST2 tokens for newAuth (firmware >=2.92)
