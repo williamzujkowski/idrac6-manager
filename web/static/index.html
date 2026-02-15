@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iDRAC6 Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1>iDRAC6 Manager</h1>
+            <nav id="host-selector"></nav>
+        </div>
+    </header>
+
+    <main>
+        <div id="connection-status" class="status-bar"></div>
+
+        <!-- System Info Card -->
+        <section class="card" id="sysinfo-card">
+            <h2>System Information</h2>
+            <div class="info-grid" id="sysinfo-grid">
+                <div class="info-item"><label>Hostname</label><span id="info-hostname">--</span></div>
+                <div class="info-item"><label>Model</label><span id="info-model">--</span></div>
+                <div class="info-item"><label>Service Tag</label><span id="info-tag">--</span></div>
+                <div class="info-item"><label>BIOS</label><span id="info-bios">--</span></div>
+                <div class="info-item"><label>Firmware</label><span id="info-fw">--</span></div>
+                <div class="info-item"><label>OS</label><span id="info-os">--</span></div>
+            </div>
+        </section>
+
+        <!-- Power Control Card -->
+        <section class="card" id="power-card">
+            <h2>Power Control</h2>
+            <div class="power-status">
+                <div class="power-indicator" id="power-indicator"></div>
+                <span id="power-state">Unknown</span>
+            </div>
+            <div class="power-actions">
+                <button class="btn btn-success" onclick="powerAction('on')">Power On</button>
+                <button class="btn btn-warning" onclick="powerAction('restart')">Restart</button>
+                <button class="btn btn-warning" onclick="powerAction('shutdown')">Graceful Shutdown</button>
+                <button class="btn btn-danger" onclick="powerAction('off')">Force Off</button>
+                <button class="btn btn-danger" onclick="powerAction('reset')">Hard Reset</button>
+                <button class="btn btn-danger" onclick="powerAction('nmi')">NMI</button>
+            </div>
+        </section>
+
+        <!-- Sensors Cards -->
+        <div class="card-row">
+            <section class="card" id="temp-card">
+                <h2>Temperatures</h2>
+                <div class="sensor-list" id="temp-sensors"></div>
+            </section>
+
+            <section class="card" id="fan-card">
+                <h2>Fans</h2>
+                <div class="sensor-list" id="fan-sensors"></div>
+            </section>
+
+            <section class="card" id="voltage-card">
+                <h2>Voltages</h2>
+                <div class="sensor-list" id="voltage-sensors"></div>
+            </section>
+        </div>
+
+        <!-- Virtual Media Card -->
+        <section class="card" id="vmedia-card">
+            <h2>Virtual Media</h2>
+            <div class="vmedia-status" id="vmedia-status">
+                <span>Status: Not mounted</span>
+            </div>
+            <div class="vmedia-form">
+                <input type="text" id="vmedia-url" placeholder="nfs://server/path/image.iso or cifs://server/share/image.iso">
+                <button class="btn btn-primary" onclick="mountMedia()">Mount</button>
+                <button class="btn btn-warning" onclick="unmountMedia()">Unmount</button>
+            </div>
+        </section>
+
+        <!-- Event Log Card -->
+        <section class="card" id="sel-card">
+            <h2>System Event Log</h2>
+            <div class="sel-actions">
+                <button class="btn btn-sm" onclick="refreshSEL()">Refresh</button>
+                <button class="btn btn-sm btn-danger" onclick="clearSEL()">Clear Log</button>
+            </div>
+            <div class="sel-table-wrap">
+                <table class="sel-table" id="sel-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Timestamp</th>
+                            <th>Severity</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sel-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>iDRAC6 Manager &mdash; <span id="footer-host"></span></p>
+    </footer>
+
+    <script src="/js/app.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

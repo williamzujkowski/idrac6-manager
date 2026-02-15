@@ -1,0 +1,13 @@
+services:
+  idrac6-manager:
+    build: .
+    container_name: idrac6-manager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - IDRAC_HOST=${IDRAC_HOST:-192.168.1.172}
+      - IDRAC_USER=${IDRAC_USER:-root}
+      - IDRAC_PASS=${IDRAC_PASS:-calvin}
+      - IDRAC_API_KEY=${IDRAC_API_KEY:-}
+    command: ["--host", "${IDRAC_HOST:-192.168.1.172}", "--user", "${IDRAC_USER:-root}", "--pass", "${IDRAC_PASS:-calvin}"]

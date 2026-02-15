@@ -1,0 +1,24 @@
+# iDRAC6 Manager configuration example
+#
+# Multiple hosts can be configured for management from a single instance.
+
+hosts:
+  - id: r710-basement
+    name: "PowerEdge R710 (Basement)"
+    host: 192.168.1.172
+    username: root
+    password: calvin
+    ssh_port: 22
+
+  # Add more hosts as needed:
+  # - id: r610-rack
+  #   name: "PowerEdge R610 (Rack)"
+  #   host: 192.168.1.173
+  #   username: root
+  #   password: calvin
+
+# Optional API key for securing the web interface
+# api_key: "your-secret-key-here"
+
+# Server settings
+# listen: ":8080"
