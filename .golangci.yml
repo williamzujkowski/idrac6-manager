@@ -1,0 +1,23 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosimple
+    - gocritic
+
+linters-settings:
+  gocritic:
+    disabled-checks:
+      - ifElseChain
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
