@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
@@ -39,8 +38,6 @@ type loginResponse struct {
 
 // NewClient creates a new iDRAC6 API client.
 func NewClient(host, username, password string) *Client {
-	jar, _ := cookiejar.New(nil)
-
 	return &Client{
 		host:     host,
 		username: username,
@@ -48,7 +45,11 @@ func NewClient(host, username, password string) *Client {
 		baseURL:  "https://" + host,
 		http: &http.Client{
 			Timeout: 15 * time.Second,
-			Jar:     jar,
+			// No cookie jar — session cookies are managed manually via applySession()
+			// to avoid duplicate cookie issues with iDRAC6's strict session handling.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse // Don't follow redirects
+			},
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: true, //nolint:gosec // iDRAC6 uses self-signed certs
