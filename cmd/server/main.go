@@ -16,7 +16,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	host := flag.String("host", "", "iDRAC host (ip:port or ip)")
 	user := flag.String("user", "root", "iDRAC username")
-	pass := flag.String("pass", "calvin", "iDRAC password")
+	pass := flag.String("pass", "", "iDRAC password")
 	apiKey := flag.String("api-key", "", "optional API key for authentication")
 	hostID := flag.String("host-id", "default", "host identifier")
 	hostName := flag.String("host-name", "", "display name for the host")
@@ -36,6 +36,11 @@ func main() {
 	}
 	if envPass := os.Getenv("IDRAC_PASS"); envPass != "" {
 		*pass = envPass
+	}
+	if *pass == "" {
+		fmt.Fprintln(os.Stderr, "Error: --pass or IDRAC_PASS is required")
+		flag.Usage()
+		os.Exit(1)
 	}
 	if envKey := os.Getenv("IDRAC_API_KEY"); envKey != "" {
 		*apiKey = envKey
