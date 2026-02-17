@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,55 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
-
-// newTestRouter creates a router backed by a mock iDRAC server.
-func newTestRouter(t *testing.T) (http.Handler, *httptest.Server) {
-	t.Helper()
-
-	// Mock iDRAC server (two-step login flow)
-	idracServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/start.html":
-			http.SetCookie(w, &http.Cookie{Name: "_appwebSessionId_", Value: "test-session"})
-			fmt.Fprint(w, `<html></html>`)
-			return
-		case "/data/login":
-			fmt.Fprint(w, `<root><authResult>0</authResult><forwardUrl>index.html</forwardUrl></root>`)
-			return
-		}
-
-		get := r.URL.Query().Get("get")
-		set := r.URL.Query().Get("set")
-
-		switch {
-		case strings.Contains(get, "pwState"):
-			fmt.Fprint(w, `<root><pwState>1</pwState></root>`)
-		case strings.Contains(get, "temperatures"):
-			fmt.Fprint(w, `<root><temperatures>Inlet Temp=23;ok;42;47</temperatures><fans></fans><voltages></voltages></root>`)
-		case strings.Contains(get, "hostName"):
-			fmt.Fprint(w, `<root><hostName>R710</hostName><sysDesc>PowerEdge R710</sysDesc><sysRev></sysRev><biosVer>6.6.0</biosVer><fwVersion>2.92</fwVersion><LCCfwVersion></LCCfwVersion><osName></osName><svcTag>ABC123</svcTag></root>`)
-		case strings.Contains(get, "sel"):
-			fmt.Fprint(w, `<root><sel>1|2024-01-01|Normal|Boot</sel></root>`)
-		case set != "":
-			fmt.Fprint(w, `<root><status>ok</status></root>`)
-		default:
-			fmt.Fprint(w, `<root></root>`)
-		}
-	}))
-
-	cfg := &Config{
-		Hosts: map[string]*HostConfig{
-			"test": {
-				Name:     "Test Server",
-				Host:     strings.TrimPrefix(idracServer.URL, "https://"),
-				Username: "root",
-				Password: "calvin",
-			},
-		},
-	}
-
-	return NewRouter(cfg), idracServer
-}
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := &Config{Hosts: map[string]*HostConfig{}}

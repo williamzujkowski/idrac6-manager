@@ -140,12 +140,6 @@ func parseXMLSensors(sensors []sensorXML) []SensorReading {
 
 // extractRawSensorString extracts a raw sensor string from XML for legacy format.
 func extractRawSensorString(data []byte, sensorType string) string {
-	type rawResp struct {
-		XMLName xml.Name `xml:"root"`
-		Value   string   `xml:",chardata"`
-	}
-
-	// Use a map-like approach
 	type genericRoot struct {
 		XMLName      xml.Name `xml:"root"`
 		Temperatures string   `xml:"temperatures"`
